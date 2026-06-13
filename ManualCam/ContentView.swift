@@ -83,12 +83,13 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .onAppear { cam.setup() }
         // Apply controls when indices change
-        .onChange(of: isoIdx)     { _, _ in applyIfManual() }
-        .onChange(of: shutterIdx) { _, _ in applyIfManual() }
-        .onChange(of: evIdx)      { _, _ in cam.setEV(evValues[evIdx]) }
-        .onChange(of: wbIdx)      { _, _ in applyWBIfManual() }
-        .onChange(of: focusIdx)   { _, _ in applyFocusIfManual() }
-        .onChange(of: zoomIdx)    { _, _ in cam.setZoom(zoomValues[zoomIdx]) }
+        // FIX: use iOS 16-compatible single-parameter onChange(of:perform:)
+        .onChange(of: isoIdx)     { _ in applyIfManual() }
+        .onChange(of: shutterIdx) { _ in applyIfManual() }
+        .onChange(of: evIdx)      { _ in cam.setEV(evValues[evIdx]) }
+        .onChange(of: wbIdx)      { _ in applyWBIfManual() }
+        .onChange(of: focusIdx)   { _ in applyFocusIfManual() }
+        .onChange(of: zoomIdx)    { _ in cam.setZoom(zoomValues[zoomIdx]) }
         // Gallery sheet
         .sheet(isPresented: $showGallery) {
             GalleryView(images: capturedImages)

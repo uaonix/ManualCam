@@ -16,15 +16,12 @@ struct DialView<T: BinaryFloatingPoint>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Center indicator line
             Rectangle()
                 .fill(isLocked ? Color.gray : accentColor)
                 .frame(width: 2, height: 36)
                 .frame(maxWidth: .infinity)
                 .overlay(alignment: .center) {
-                    // Tick strip
-                    tickStrip
-                        .frame(height: 48)
+                    tickStrip.frame(height: 48)
                 }
         }
         .frame(height: 48)
@@ -36,30 +33,34 @@ struct DialView<T: BinaryFloatingPoint>: View {
                 }
                 .onChanged { value in
                     let delta = -(value.translation.width - baseOffset) / tickSpacing
-                    let newIdx = (selectedIndex + Int(delta.rounded())).clamped(to: 0...(values.count - 1))
+                    let newIdx = clampIndex(selectedIndex + Int(delta.rounded()))
                     if newIdx != selectedIndex {
                         selectedIndex = newIdx
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 }
-                .onEnded { value in
-                    baseOffset = 0
-                }
+                .onEnded { _ in baseOffset = 0 }
         )
         .opacity(isLocked ? 0.4 : 1.0)
         .allowsHitTesting(!isLocked)
     }
 
+    // FIX: use free function clampIndex instead of Int.clamped extension
+    // (avoids conflict with Int.min/max static members)
+    private func clampIndex(_ idx: Int) -> Int {
+        Swift.max(0, Swift.min(values.count - 1, idx))
+    }
+
     private var tickStrip: some View {
         GeometryReader { geo in
             let center = geo.size.width / 2
-            let count = values.count
+            let count  = values.count
             let visibleCount = Int(geo.size.width / tickSpacing) + 4
 
             Canvas { ctx, size in
-                let cur = selectedIndex
-                let startIdx = max(0, cur - visibleCount / 2)
-                let endIdx   = min(count - 1, cur + visibleCount / 2)
+                let cur      = selectedIndex
+                let startIdx = Swift.max(0, cur - visibleCount / 2)
+                let endIdx   = Swift.min(count - 1, cur + visibleCount / 2)
 
                 for i in startIdx...endIdx {
                     let offset = CGFloat(i - cur) * tickSpacing + center
@@ -68,19 +69,20 @@ struct DialView<T: BinaryFloatingPoint>: View {
                     let isCurrent = i == cur
                     let isMajor   = i % 5 == 0
                     let height: CGFloat = isCurrent ? 26 : isMajor ? 20 : 13
-                    let color: Color = isCurrent ? accentColor : (isMajor ? .white.opacity(0.6) : .white.opacity(0.25))
-                    let width: CGFloat = isCurrent ? 2.5 : 1.5
+                    let color: Color    = isCurrent ? accentColor : (isMajor ? .white.opacity(0.6) : .white.opacity(0.25))
+                    let width: CGFloat  = isCurrent ? 2.5 : 1.5
 
                     let tickRect = CGRect(x: offset - width/2, y: size.height - height, width: width, height: height)
                     ctx.fill(Path(roundedRect: tickRect, cornerRadius: 1), with: .color(color))
 
-                    // Label every 5 ticks and current
                     if isCurrent || isMajor {
-                        let text = format(values[i])
-                        let font: Font = isCurrent ? .system(size: 10, weight: .bold) : .system(size: 9, weight: .medium)
+                        let text  = format(values[i])
+                        let font: Font = isCurrent
+                            ? .system(size: 10, weight: .bold)
+                            : .system(size: 9, weight: .medium)
                         let resolved = ctx.resolve(Text(text).font(font).foregroundColor(isCurrent ? accentColor : .gray))
-                        let size2 = resolved.measure(in: CGSize(width: 80, height: 20))
-                        ctx.draw(resolved, at: CGPoint(x: offset - size2.width/2, y: 4))
+                        let sz = resolved.measure(in: CGSize(width: 80, height: 20))
+                        ctx.draw(resolved, at: CGPoint(x: offset - sz.width/2, y: 4))
                     }
                 }
             }
@@ -88,14 +90,14 @@ struct DialView<T: BinaryFloatingPoint>: View {
     }
 }
 
-// MARK: - Dial Card (tap to select parameter)
+// MARK: - Dial Card
 struct DialCard: View {
     let label: String
     let value: String
     let unit: String
     var isSelected: Bool = false
-    var isLocked: Bool = false
-    var showAuto: Bool = false
+    var isLocked: Bool   = false
+    var showAuto: Bool   = false
 
     var body: some View {
         VStack(spacing: 2) {
@@ -131,16 +133,12 @@ struct DialCard: View {
                 .fill(Color(white: 0.1))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(isSelected ? Color.yellow : Color.white.opacity(0.08), lineWidth: isSelected ? 1.5 : 1)
+                        .strokeBorder(
+                            isSelected ? Color.yellow : Color.white.opacity(0.08),
+                            lineWidth: isSelected ? 1.5 : 1
+                        )
                 )
         )
         .opacity(isLocked ? 0.4 : 1.0)
-    }
-}
-
-// MARK: - Int clamping helper
-extension Int {
-    func clamped(to range: ClosedRange<Int>) -> Int {
-        min(max(self, range.lowerBound), range.upperBound)
     }
 }

@@ -39,7 +39,6 @@ final class CameraManager: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private var videoInput: AVCaptureDeviceInput?
     private let photoOutput = AVCapturePhotoOutput()
-    private let videoOutput = AVCaptureMovieFileOutput()
     private let sessionQueue = DispatchQueue(label: "com.manualcam.session", qos: .userInitiated)
 
     // Published state
@@ -51,18 +50,18 @@ final class CameraManager: NSObject, ObservableObject {
     // Real camera values (read back from device)
     @Published var currentISO: Float = 400
     @Published var currentShutterSpeed: CMTime = CMTimeMake(value: 1, timescale: 125)
-    @Published var currentLensPosition: Float = 1.0    // 0..1
+    @Published var currentLensPosition: Float = 1.0
     @Published var currentEV: Float = 0
     @Published var currentZoom: CGFloat = 1.0
     @Published var currentWBGains: AVCaptureDevice.WhiteBalanceGains?
     @Published var currentWBTemp: Float = 5500
 
-    // Capability ranges (populated per device)
+    // Capability ranges
     @Published var isoRange: ClosedRange<Float> = 50...6400
     @Published var shutterRange: ClosedRange<Double> = (1.0/8000)...(1.0/4)
     @Published var evRange: ClosedRange<Float> = -3...3
     @Published var zoomRange: ClosedRange<CGFloat> = 1...10
-    @Published var minFocusDist: Float = 0
+    @Published var minFocusDist: Int = 0          // FIX: Int not Float
     @Published var supportsRAW: Bool = false
     @Published var supportsAppleLog: Bool = false
     @Published var supportsLiDAR: Bool = false
@@ -76,11 +75,7 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var permissionGranted: Bool = false
     @Published var errorMessage: String? = nil
 
-    // Histogram data
-    @Published var histogram: [Float] = Array(repeating: 0, count: 64)
-
     private var kvoTokens: [NSKeyValueObservation] = []
-    private var histogramTimer: Timer?
 
     // MARK: - Setup
     func setup() {
@@ -105,12 +100,10 @@ final class CameraManager: NSObject, ObservableObject {
     }
 
     private func configureSession() async {
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
+        sessionQueue.async { [self] in
             self.session.beginConfiguration()
             self.session.sessionPreset = .photo
 
-            // Discover all cameras
             let discovery = AVCaptureDevice.DiscoverySession(
                 deviceTypes: [
                     .builtInWideAngleCamera,
@@ -143,23 +136,23 @@ final class CameraManager: NSObject, ObservableObject {
                 return CameraDeviceInfo(id: device.uniqueID, device: device, displayName: name, icon: icon)
             }
 
-            Task { @MainActor in
+            Task { @MainActor [self] in
                 self.availableCameras = cameras
             }
 
-            // Start with back wide camera
             let preferred = discovery.devices.first(where: {
                 $0.deviceType == .builtInWideAngleCamera && $0.position == .back
             }) ?? discovery.devices.first
 
             if let device = preferred {
-                self.switchToDevice(device)
+                // FIX: dispatch back to main actor for switchToDevice
+                Task { @MainActor [self] in
+                    self.switchToDevice(device)
+                }
             }
 
-            // Add photo output
             if self.session.canAddOutput(self.photoOutput) {
                 self.session.addOutput(self.photoOutput)
-                self.photoOutput.isHighResolutionCaptureEnabled = true
                 if #available(iOS 16.0, *) {
                     self.photoOutput.maxPhotoDimensions = .init(width: 4032, height: 3024)
                 }
@@ -172,61 +165,58 @@ final class CameraManager: NSObject, ObservableObject {
 
     // MARK: - Switch Camera
     func switchCamera(to info: CameraDeviceInfo) {
-        sessionQueue.async { [weak self] in
-            self?.switchToDevice(info.device)
-        }
-        Task { @MainActor in
-            activeCamera = info
-        }
+        switchToDevice(info.device)
+        activeCamera = info
     }
 
+    // Must be called on MainActor (matches class isolation)
     private func switchToDevice(_ device: AVCaptureDevice) {
-        session.beginConfiguration()
+        sessionQueue.async { [self] in
+            self.session.beginConfiguration()
 
-        // Remove old input
-        if let old = videoInput {
-            session.removeInput(old)
-        }
-
-        do {
-            let input = try AVCaptureDeviceInput(device: device)
-            if session.canAddInput(input) {
-                session.addInput(input)
-                videoInput = input
+            if let old = self.videoInput {
+                self.session.removeInput(old)
             }
-        } catch {
-            Task { @MainActor in self.errorMessage = error.localizedDescription }
-            session.commitConfiguration()
-            return
-        }
 
-        session.commitConfiguration()
+            do {
+                let input = try AVCaptureDeviceInput(device: device)
+                if self.session.canAddInput(input) {
+                    self.session.addInput(input)
+                    self.videoInput = input
+                }
+            } catch {
+                Task { @MainActor [self] in self.errorMessage = error.localizedDescription }
+                self.session.commitConfiguration()
+                return
+            }
 
-        Task { @MainActor in
-            self.updateCapabilities(for: device)
-            self.startKVO(for: device)
+            self.session.commitConfiguration()
+
+            Task { @MainActor [self] in
+                self.updateCapabilities(for: device)
+                self.startKVO(for: device)
+            }
         }
     }
 
     // MARK: - Capabilities
     private func updateCapabilities(for device: AVCaptureDevice) {
-        isoRange    = device.activeFormat.minISO...device.activeFormat.maxISO
+        isoRange     = device.activeFormat.minISO...device.activeFormat.maxISO
         shutterRange = CMTimeGetSeconds(device.activeFormat.minExposureDuration)...CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
-        evRange     = device.minExposureTargetBias...device.maxExposureTargetBias
-        zoomRange   = 1.0...min(device.activeFormat.videoMaxZoomFactor, 10.0)
-        minFocusDist = device.minimumFocusDistance
+        evRange      = device.minExposureTargetBias...device.maxExposureTargetBias
+        zoomRange    = 1.0...min(device.activeFormat.videoMaxZoomFactor, 10.0)
+        minFocusDist = device.minimumFocusDistance   // FIX: already Int
         supportsTorch = device.hasTorch
         supportsLiDAR = device.deviceType == .builtInLiDARDepthCamera
+        supportsRAW   = photoOutput.availableRawPhotoPixelFormatTypes.count > 0
 
-        // RAW support
-        supportsRAW = photoOutput.availableRawPhotoPixelFormatTypes.count > 0
-
-        // Apple Log (iPhone 15 Pro+)
+        // FIX: Apple Log check wrapped in iOS 17 availability
         if #available(iOS 17.0, *) {
-            supportsAppleLog = device.formats.contains { $0.isAppleLogVideoSupported }
+            supportsAppleLog = device.formats.contains { $0.supportedColorSpaces.contains(.appleLog) }
+        } else {
+            supportsAppleLog = false
         }
 
-        // Read current values
         currentISO          = device.iso
         currentShutterSpeed = device.exposureDuration
         currentLensPosition = device.lensPosition
@@ -238,59 +228,56 @@ final class CameraManager: NSObject, ObservableObject {
     }
 
     // MARK: - KVO (live readout)
+    // FIX: capture `device` directly instead of `self` in KVO closures
     private func startKVO(for device: AVCaptureDevice) {
         kvoTokens.forEach { $0.invalidate() }
         kvoTokens = []
 
         kvoTokens.append(device.observe(\.iso, options: .new) { [weak self] d, _ in
-            Task { @MainActor in self?.currentISO = d.iso }
+            let val = d.iso
+            Task { @MainActor in self?.currentISO = val }
         })
         kvoTokens.append(device.observe(\.exposureDuration, options: .new) { [weak self] d, _ in
-            Task { @MainActor in self?.currentShutterSpeed = d.exposureDuration }
+            let val = d.exposureDuration
+            Task { @MainActor in self?.currentShutterSpeed = val }
         })
         kvoTokens.append(device.observe(\.lensPosition, options: .new) { [weak self] d, _ in
-            Task { @MainActor in self?.currentLensPosition = d.lensPosition }
+            let val = d.lensPosition
+            Task { @MainActor in self?.currentLensPosition = val }
         })
         kvoTokens.append(device.observe(\.videoZoomFactor, options: .new) { [weak self] d, _ in
-            Task { @MainActor in self?.currentZoom = d.videoZoomFactor }
+            let val = d.videoZoomFactor
+            Task { @MainActor in self?.currentZoom = val }
         })
         kvoTokens.append(device.observe(\.deviceWhiteBalanceGains, options: .new) { [weak self] d, _ in
+            let gains = d.deviceWhiteBalanceGains
+            let temp  = d.temperatureAndTintValues(for: gains)
+            let tempVal = temp.temperature
             Task { @MainActor in
-                let gains = d.deviceWhiteBalanceGains
                 self?.currentWBGains = gains
-                let temp = d.temperatureAndTintValues(for: gains)
-                self?.currentWBTemp = temp.temperature
+                self?.currentWBTemp  = tempVal
             }
         })
     }
 
     // MARK: - Manual Controls
-
     func setISO(_ iso: Float) {
         guard let device = videoInput?.device else { return }
         let clamped = iso.clamped(to: isoRange)
         sessionQueue.async {
             try? device.lockForConfiguration()
-            device.setExposureModeCustom(
-                duration: device.exposureDuration,
-                iso: clamped,
-                completionHandler: nil
-            )
+            device.setExposureModeCustom(duration: device.exposureDuration, iso: clamped, completionHandler: nil)
             device.unlockForConfiguration()
         }
     }
 
     func setShutterSpeed(_ seconds: Double) {
         guard let device = videoInput?.device else { return }
-        let clamped = seconds.clamped(to: shutterRange)
+        let clamped  = seconds.clamped(to: shutterRange)
         let duration = CMTimeMakeWithSeconds(clamped, preferredTimescale: 1_000_000)
         sessionQueue.async {
             try? device.lockForConfiguration()
-            device.setExposureModeCustom(
-                duration: duration,
-                iso: device.iso,
-                completionHandler: nil
-            )
+            device.setExposureModeCustom(duration: duration, iso: device.iso, completionHandler: nil)
             device.unlockForConfiguration()
         }
     }
@@ -310,9 +297,7 @@ final class CameraManager: NSObject, ObservableObject {
         sessionQueue.async {
             try? device.lockForConfiguration()
             var gains = device.deviceWhiteBalanceGains(for:
-                AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(temperature: kelvin, tint: 0)
-            )
-            // Clamp gains to max
+                AVCaptureDevice.WhiteBalanceTemperatureAndTintValues(temperature: kelvin, tint: 0))
             let maxGain = device.maxWhiteBalanceGain
             gains.redGain   = min(max(gains.redGain,   1.0), maxGain)
             gains.greenGain = min(max(gains.greenGain, 1.0), maxGain)
@@ -335,7 +320,7 @@ final class CameraManager: NSObject, ObservableObject {
 
     func setFocus(lensPosition: Float) {
         guard let device = videoInput?.device else { return }
-        let clamped = lensPosition.clamped(to: 0...1)
+        let clamped = min(max(lensPosition, 0), 1)
         sessionQueue.async {
             try? device.lockForConfiguration()
             device.setFocusModeLocked(lensPosition: clamped, completionHandler: nil)
@@ -356,7 +341,6 @@ final class CameraManager: NSObject, ObservableObject {
 
     func tapToFocus(at point: CGPoint, in viewSize: CGSize) {
         guard let device = videoInput?.device else { return }
-        // Convert from view coordinates to device coordinates (0..1)
         let devicePoint = CGPoint(x: point.x / viewSize.width, y: point.y / viewSize.height)
         focusPoint = point
 
@@ -373,7 +357,6 @@ final class CameraManager: NSObject, ObservableObject {
             device.unlockForConfiguration()
         }
 
-        // Clear reticle after a moment
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
             self?.focusPoint = nil
         }
@@ -416,21 +399,18 @@ final class CameraManager: NSObject, ObservableObject {
         let settings: AVCapturePhotoSettings
 
         if rawEnabled, let rawFormat = photoOutput.availableRawPhotoPixelFormatTypes.first {
-            let processedFormat: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.hevc
-            ]
-            settings = AVCapturePhotoSettings(
-                rawPixelFormatType: rawFormat,
-                processedFormat: processedFormat
-            )
+            let processedFormat: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.hevc]
+            settings = AVCapturePhotoSettings(rawPixelFormatType: rawFormat, processedFormat: processedFormat)
         } else {
             settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
         }
 
-        settings.isHighResolutionPhotoEnabled = true
+        if #available(iOS 16.0, *) {
+            settings.maxPhotoDimensions = .init(width: 4032, height: 3024)
+        }
+
         settings.flashMode = isTorchOn ? .on : .off
 
-        // Enable depth if available
         if photoOutput.isDepthDataDeliverySupported {
             settings.isDepthDataDeliveryEnabled = true
         }
@@ -441,7 +421,6 @@ final class CameraManager: NSObject, ObservableObject {
 
 // MARK: - Photo Capture Delegate
 extension CameraManager: AVCapturePhotoCaptureDelegate {
-
     nonisolated func photoOutput(
         _ output: AVCapturePhotoOutput,
         didFinishProcessingPhoto photo: AVCapturePhoto,
@@ -452,33 +431,23 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
             return
         }
 
-        // Save to Photos library
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else { return }
             PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetCreationRequest.forAsset()
-                // Save RAW + HEIF pair if available
                 if let rawData = photo.fileDataRepresentation() {
-                    // For RAW: save as DNG
-                    if photo.isRawPhoto {
-                        request.addResource(with: .alternatePhoto, data: rawData, options: nil)
-                    } else {
-                        request.addResource(with: .photo, data: rawData, options: nil)
-                    }
+                    request.addResource(with: photo.isRawPhoto ? .alternatePhoto : .photo, data: rawData, options: nil)
                 }
             }
         }
 
-        // Update preview thumbnail
         if let data = photo.fileDataRepresentation(), let img = UIImage(data: data) {
-            Task { @MainActor in
-                self.lastPhoto = img
-            }
+            Task { @MainActor in self.lastPhoto = img }
         }
     }
 }
 
-// MARK: - Comparable clamping helpers
+// MARK: - Clamping helpers
 extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
