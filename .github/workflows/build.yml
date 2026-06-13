@@ -1,0 +1,68 @@
+name: Build iOS IPA (Unsigned)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Select Xcode 15
+      run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    - name: Install xcpretty
+      run: gem install xcpretty --no-document 2>/dev/null || true
+
+    # Build unsigned .app into a derived data folder
+    # pipefail ensures xcodebuild errors aren't swallowed by xcpretty
+    - name: Build unsigned .app
+      run: |
+        set -o pipefail
+        xcodebuild build \
+          -project ManualCam.xcodeproj \
+          -scheme ManualCam \
+          -sdk iphoneos \
+          -configuration Release \
+          -derivedDataPath $RUNNER_TEMP/DerivedData \
+          CODE_SIGNING_ALLOWED=NO \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGN_IDENTITY="" \
+          ENABLE_BITCODE=NO \
+          | xcpretty
+
+    # Package the .app into an unsigned .ipa
+    - name: Package into unsigned IPA
+      run: |
+        set -e
+        APP_PATH=$(find $RUNNER_TEMP/DerivedData -name "ManualCam.app" -type d | head -1)
+
+        if [ -z "$APP_PATH" ]; then
+          echo "❌ ERROR: ManualCam.app not found — build likely failed"
+          exit 1
+        fi
+
+        echo "✅ Found app at: $APP_PATH"
+        mkdir -p $RUNNER_TEMP/Payload
+        cp -r "$APP_PATH" $RUNNER_TEMP/Payload/ManualCam.app
+
+        cd $RUNNER_TEMP
+        zip -r ManualCam-unsigned.ipa Payload/
+        echo "✅ IPA created: $(du -sh ManualCam-unsigned.ipa)"
+
+    - name: Upload unsigned IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: ManualCam-Unsigned-IPA
+        path: ${{ runner.temp }}/ManualCam-unsigned.ipa
+        retention-days: 30

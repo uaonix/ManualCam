@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>ManualCam needs camera access to capture photos with manual controls.</string>
+
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>ManualCam saves photos to your Photos library.</string>
+
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>ManualCam accesses your Photos library to display captured images.</string>
+
+    <key>NSMicrophoneUsageDescription</key>
+    <string>ManualCam uses the microphone for video recording with audio.</string>
+
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>camera</string>
+        <string>arkit</string>
+    </array>
+
+    <key>UIStatusBarHidden</key>
+    <true/>
+
+    <key>UIRequiresFullScreen</key>
+    <true/>
+
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+    </array>
+
+    <key>UILaunchScreen</key>
+    <dict>
+        <key>UIColorName</key>
+        <string>LaunchBackground</string>
+    </dict>
+
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+</dict>
+</plist>
