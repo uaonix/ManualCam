@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: macos-14
@@ -16,16 +19,26 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Select Xcode 15
-      run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+      run: |
+        # Use whatever Xcode 15.x is available on this runner
+        XCODE=$(ls /Applications | grep "Xcode_15" | sort -V | tail -1)
+        echo "Using: $XCODE"
+        sudo xcode-select -s /Applications/$XCODE/Contents/Developer
 
     - name: Show Xcode version
       run: xcodebuild -version
 
+    - name: List project info (debug)
+      run: |
+        echo "--- Files in repo root ---"
+        ls -la
+        echo "--- Schemes available ---"
+        xcodebuild -project ManualCam.xcodeproj -list
+
     - name: Install xcpretty
       run: gem install xcpretty --no-document 2>/dev/null || true
 
-    # Build unsigned .app into a derived data folder
-    # pipefail ensures xcodebuild errors aren't swallowed by xcpretty
+    # Build unsigned .app — show full log on failure
     - name: Build unsigned .app
       run: |
         set -o pipefail
@@ -39,7 +52,13 @@ jobs:
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGN_IDENTITY="" \
           ENABLE_BITCODE=NO \
-          | xcpretty
+          2>&1 | tee $RUNNER_TEMP/build.log | xcpretty
+        EXIT=${PIPESTATUS[0]}
+        if [ $EXIT -ne 0 ]; then
+          echo "❌ Build failed — last 100 lines of raw log:"
+          tail -100 $RUNNER_TEMP/build.log
+          exit $EXIT
+        fi
 
     # Package the .app into an unsigned .ipa
     - name: Package into unsigned IPA
