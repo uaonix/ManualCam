@@ -27,13 +27,6 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
 
-    - name: List project info (debug)
-      run: |
-        echo "--- Files in repo root ---"
-        ls -la
-        echo "--- Schemes available ---"
-        xcodebuild -project ManualCam.xcodeproj -list
-
     - name: Install xcpretty
       run: gem install xcpretty --no-document 2>/dev/null || true
 
@@ -53,16 +46,81 @@ jobs:
           2>&1 | tee $RUNNER_TEMP/build.log | xcpretty
         EXIT=${PIPESTATUS[0]}
         if [ $EXIT -ne 0 ]; then
-          echo "❌ Build failed — last 100 lines of raw log:"
+          echo "❌ Build failed — last 100 lines:"
           tail -100 $RUNNER_TEMP/build.log
           exit $EXIT
         fi
 
-    - name: Package into unsigned IPA
+    - name: Create self-signed certificate and apply minimal signature
       run: |
         set -e
 
-        # Find the built .app
+        # Create a temporary keychain
+        KEYCHAIN_PATH=$RUNNER_TEMP/temp.keychain
+        KEYCHAIN_PASS="temp1234"
+        security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+        # Generate a self-signed certificate
+        # This is accepted by AltStore/Sideloadly for re-signing
+        cat > $RUNNER_TEMP/cert.conf << 'CERTEOF'
+        [req]
+        default_bits       = 2048
+        prompt             = no
+        default_md         = sha256
+        distinguished_name = dn
+        x509_extensions    = v3_req
+
+        [dn]
+        C=US
+        O=ManualCam
+        CN=ManualCam Dev
+
+        [v3_req]
+        keyUsage = digitalSignature
+        extendedKeyUsage = codeSigning
+        CERTEOF
+
+        openssl req -x509 -newkey rsa:2048 \
+          -keyout $RUNNER_TEMP/key.pem \
+          -out $RUNNER_TEMP/cert.pem \
+          -days 365 -nodes \
+          -config $RUNNER_TEMP/cert.conf
+
+        # Convert to p12
+        openssl pkcs12 -export \
+          -out $RUNNER_TEMP/codesign.p12 \
+          -inkey $RUNNER_TEMP/key.pem \
+          -in $RUNNER_TEMP/cert.pem \
+          -passout pass:temp1234 \
+          -legacy 2>/dev/null || \
+        openssl pkcs12 -export \
+          -out $RUNNER_TEMP/codesign.p12 \
+          -inkey $RUNNER_TEMP/key.pem \
+          -in $RUNNER_TEMP/cert.pem \
+          -passout pass:temp1234
+
+        # Import into keychain
+        security import $RUNNER_TEMP/codesign.p12 \
+          -k "$KEYCHAIN_PATH" \
+          -P temp1234 \
+          -T /usr/bin/codesign \
+          -T /usr/bin/security
+        security set-key-partition-list \
+          -S apple-tool:,apple:,codesign: \
+          -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+
+        # Get the identity name
+        IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | grep -o '".*"' | tr -d '"')
+        echo "Identity: $IDENTITY"
+        echo "SIGN_IDENTITY=$IDENTITY" >> $GITHUB_ENV
+
+    - name: Package and sign IPA
+      run: |
+        set -e
+
         APP_PATH=$(find $RUNNER_TEMP/DerivedData -name "ManualCam.app" -type d | head -1)
         if [ -z "$APP_PATH" ]; then
           echo "❌ ManualCam.app not found"
@@ -70,23 +128,63 @@ jobs:
         fi
         echo "✅ Found: $APP_PATH"
 
-        # Create a clean Payload directory
+        # Copy app to working dir
         WORK_DIR=$RUNNER_TEMP/ipa_work
         rm -rf "$WORK_DIR"
         mkdir -p "$WORK_DIR/Payload"
         cp -r "$APP_PATH" "$WORK_DIR/Payload/ManualCam.app"
 
-        # IMPORTANT: cd into WORK_DIR before zipping
-        # so the zip contains Payload/ManualCam.app at its root
-        # NOT /private/var/folders/.../Payload/ManualCam.app
+        APP="$WORK_DIR/Payload/ManualCam.app"
+
+        # Create a minimal entitlements file
+        cat > $RUNNER_TEMP/entitlements.plist << 'ENTEOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>application-identifier</key>
+            <string>ALTTEAM.com.manualcam.app</string>
+            <key>com.apple.developer.team-identifier</key>
+            <string>ALTTEAM</string>
+            <key>get-task-allow</key>
+            <true/>
+        </dict>
+        </plist>
+        ENTEOF
+
+        # Sign frameworks first (if any)
+        find "$APP/Frameworks" -name "*.framework" 2>/dev/null | while read fw; do
+          codesign --force --sign "$SIGN_IDENTITY" \
+            --keychain $RUNNER_TEMP/temp.keychain \
+            "$fw" 2>/dev/null || true
+        done
+
+        # Sign dylibs (if any)
+        find "$APP" -name "*.dylib" 2>/dev/null | while read lib; do
+          codesign --force --sign "$SIGN_IDENTITY" \
+            --keychain $RUNNER_TEMP/temp.keychain \
+            "$lib" 2>/dev/null || true
+        done
+
+        # Sign the main app bundle
+        codesign --force --sign "$SIGN_IDENTITY" \
+          --keychain $RUNNER_TEMP/temp.keychain \
+          --entitlements $RUNNER_TEMP/entitlements.plist \
+          --timestamp=none \
+          "$APP"
+
+        echo "✅ App signed"
+        codesign -d -vvv "$APP" 2>&1 | head -10
+
+        # Package into IPA
         cd "$WORK_DIR"
         zip -r "$RUNNER_TEMP/ManualCam-unsigned.ipa" Payload
 
         echo "✅ IPA size: $(du -sh $RUNNER_TEMP/ManualCam-unsigned.ipa)"
-        echo "--- Verifying IPA structure ---"
+        echo "--- IPA structure ---"
         unzip -l "$RUNNER_TEMP/ManualCam-unsigned.ipa" | head -15
 
-    - name: Upload unsigned IPA
+    - name: Upload IPA
       uses: actions/upload-artifact@v4
       with:
         name: ManualCam-Unsigned-IPA
