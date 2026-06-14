@@ -46,7 +46,7 @@ jobs:
           2>&1 | tee $RUNNER_TEMP/build.log | xcpretty
         EXIT=${PIPESTATUS[0]}
         if [ $EXIT -ne 0 ]; then
-          echo "❌ Build failed — last 100 lines:"
+          echo "Build failed - last 100 lines:"
           tail -100 $RUNNER_TEMP/build.log
           exit $EXIT
         fi
@@ -54,66 +54,39 @@ jobs:
     - name: Package and ad-hoc sign IPA
       run: |
         set -e
-
         APP_PATH=$(find $RUNNER_TEMP/DerivedData -name "ManualCam.app" -type d | head -1)
         if [ -z "$APP_PATH" ]; then
-          echo "❌ ManualCam.app not found"
+          echo "ManualCam.app not found"
           exit 1
         fi
-        echo "✅ Found: $APP_PATH"
+        echo "Found: $APP_PATH"
 
-        # Copy app into Payload/
         WORK_DIR=$RUNNER_TEMP/ipa_work
         rm -rf "$WORK_DIR"
         mkdir -p "$WORK_DIR/Payload"
         cp -r "$APP_PATH" "$WORK_DIR/Payload/ManualCam.app"
         APP="$WORK_DIR/Payload/ManualCam.app"
 
-        # Create minimal entitlements
-        cat > $RUNNER_TEMP/entitlements.plist << 'ENTEOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>application-identifier</key>
-    <string>ALTTEAM.com.manualcam.app</string>
-    <key>com.apple.developer.team-identifier</key>
-    <string>ALTTEAM</string>
-    <key>get-task-allow</key>
-    <true/>
-</dict>
-</plist>
-ENTEOF
-
-        # Sign with ad-hoc identity "-"
-        # "-" means local ad-hoc signature — no certificate needed
-        # AltStore/Sideloadly will replace this with your Apple ID signature
-
-        # Sign any embedded frameworks first
         if [ -d "$APP/Frameworks" ]; then
-          find "$APP/Frameworks" -name "*.framework" -o -name "*.dylib" | while read fw; do
+          find "$APP/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) | while read fw; do
             codesign --force --sign "-" --timestamp=none "$fw" 2>/dev/null || true
           done
         fi
 
-        # Sign the main bundle
         codesign \
           --force \
           --sign "-" \
-          --entitlements $RUNNER_TEMP/entitlements.plist \
+          --entitlements entitlements.plist \
           --timestamp=none \
-          --generate-entitlement-der \
           "$APP"
 
-        echo "✅ Ad-hoc signature applied"
+        echo "Ad-hoc signature applied"
         codesign -dv "$APP" 2>&1
 
-        # Package into IPA — must cd into WORK_DIR so paths are relative
         cd "$WORK_DIR"
         zip -r "$RUNNER_TEMP/ManualCam-unsigned.ipa" Payload
 
-        echo "✅ IPA size: $(du -sh $RUNNER_TEMP/ManualCam-unsigned.ipa)"
-        echo "--- IPA structure ---"
+        echo "IPA size: $(du -sh $RUNNER_TEMP/ManualCam-unsigned.ipa)"
         unzip -l "$RUNNER_TEMP/ManualCam-unsigned.ipa" | head -10
 
     - name: Upload IPA
