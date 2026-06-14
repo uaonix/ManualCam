@@ -30,64 +30,93 @@ jobs:
     - name: Install xcpretty
       run: gem install xcpretty --no-document 2>/dev/null || true
 
-    - name: Build unsigned .app
+    - name: Build archive
       run: |
         set -o pipefail
-        xcodebuild build \
+        xcodebuild archive \
           -project ManualCam.xcodeproj \
           -scheme ManualCam \
           -sdk iphoneos \
           -configuration Release \
-          -derivedDataPath $RUNNER_TEMP/DerivedData \
+          -archivePath $RUNNER_TEMP/ManualCam.xcarchive \
           CODE_SIGNING_ALLOWED=NO \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGN_IDENTITY="" \
+          AD_HOC_CODE_SIGNING_ALLOWED=YES \
           ENABLE_BITCODE=NO \
+          SKIP_INSTALL=NO \
           2>&1 | tee $RUNNER_TEMP/build.log | xcpretty
         EXIT=${PIPESTATUS[0]}
         if [ $EXIT -ne 0 ]; then
-          echo "Build failed - last 100 lines:"
+          echo "❌ Build failed:"
           tail -100 $RUNNER_TEMP/build.log
           exit $EXIT
         fi
 
-    - name: Package and ad-hoc sign IPA
+    - name: Verify and fix Info.plist inside .app
       run: |
         set -e
-        APP_PATH=$(find $RUNNER_TEMP/DerivedData -name "ManualCam.app" -type d | head -1)
+        APP_PATH=$(find $RUNNER_TEMP/ManualCam.xcarchive -name "ManualCam.app" -type d | head -1)
         if [ -z "$APP_PATH" ]; then
-          echo "ManualCam.app not found"
+          echo "❌ ManualCam.app not found in archive"
+          find $RUNNER_TEMP/ManualCam.xcarchive -type d | head -20
           exit 1
         fi
-        echo "Found: $APP_PATH"
 
+        echo "✅ App found: $APP_PATH"
+        PLIST="$APP_PATH/Info.plist"
+
+        echo "--- Info.plist contents ---"
+        plutil -p "$PLIST" || echo "⚠️ Could not read Info.plist"
+
+        # Check CFBundleIdentifier exists
+        BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$PLIST" 2>/dev/null || echo "")
+        echo "Bundle ID found: '$BUNDLE_ID'"
+
+        if [ -z "$BUNDLE_ID" ] || [ "$BUNDLE_ID" = "" ]; then
+          echo "⚠️ CFBundleIdentifier missing — injecting it"
+          plutil -insert CFBundleIdentifier -string "com.manualcam.app" "$PLIST"
+        fi
+
+        # Also ensure CFBundleExecutable is set
+        EXEC=$(plutil -extract CFBundleExecutable raw "$PLIST" 2>/dev/null || echo "")
+        echo "Bundle Executable: '$EXEC'"
+        if [ -z "$EXEC" ]; then
+          echo "⚠️ CFBundleExecutable missing — injecting it"
+          plutil -insert CFBundleExecutable -string "ManualCam" "$PLIST"
+        fi
+
+        # Verify binary exists
+        echo "--- App bundle contents ---"
+        ls -la "$APP_PATH"
+
+        # Verify the binary is there
+        if [ ! -f "$APP_PATH/ManualCam" ]; then
+          echo "❌ Binary ManualCam not found inside .app"
+          exit 1
+        fi
+        echo "✅ Binary found"
+
+    - name: Package IPA
+      run: |
+        set -e
+        APP_PATH=$(find $RUNNER_TEMP/ManualCam.xcarchive -name "ManualCam.app" -type d | head -1)
+
+        # Ad-hoc sign so the bundle has a valid signature structure
+        codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+
+        # Package into IPA — cd into work dir so Payload/ is at zip root
         WORK_DIR=$RUNNER_TEMP/ipa_work
         rm -rf "$WORK_DIR"
         mkdir -p "$WORK_DIR/Payload"
         cp -r "$APP_PATH" "$WORK_DIR/Payload/ManualCam.app"
-        APP="$WORK_DIR/Payload/ManualCam.app"
-
-        if [ -d "$APP/Frameworks" ]; then
-          find "$APP/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) | while read fw; do
-            codesign --force --sign "-" --timestamp=none "$fw" 2>/dev/null || true
-          done
-        fi
-
-        codesign \
-          --force \
-          --sign "-" \
-          --entitlements entitlements.plist \
-          --timestamp=none \
-          "$APP"
-
-        echo "Ad-hoc signature applied"
-        codesign -dv "$APP" 2>&1
 
         cd "$WORK_DIR"
-        zip -r "$RUNNER_TEMP/ManualCam-unsigned.ipa" Payload
+        zip -qr "$RUNNER_TEMP/ManualCam-unsigned.ipa" Payload
 
-        echo "IPA size: $(du -sh $RUNNER_TEMP/ManualCam-unsigned.ipa)"
-        unzip -l "$RUNNER_TEMP/ManualCam-unsigned.ipa" | head -10
+        echo "✅ IPA: $(du -sh $RUNNER_TEMP/ManualCam-unsigned.ipa)"
+        echo "--- IPA structure ---"
+        unzip -l "$RUNNER_TEMP/ManualCam-unsigned.ipa" | grep -E "(Payload/$|ManualCam$|Info.plist)" | head -10
 
     - name: Upload IPA
       uses: actions/upload-artifact@v4

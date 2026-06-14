@@ -2,6 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.manualcam.app</string>
+
+    <key>CFBundleName</key>
+    <string>ManualCam</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>ManualCam</string>
+
+    <key>CFBundleExecutable</key>
+    <string>ManualCam</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+
     <key>NSCameraUsageDescription</key>
     <string>ManualCam needs camera access to capture photos with manual controls.</string>
 
@@ -17,7 +44,6 @@
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>camera</string>
-        <string>arkit</string>
     </array>
 
     <key>UIStatusBarHidden</key>
@@ -30,12 +56,6 @@
     <array>
         <string>UIInterfaceOrientationPortrait</string>
     </array>
-
-    <key>UILaunchScreen</key>
-    <dict>
-        <key>UIColorName</key>
-        <string>LaunchBackground</string>
-    </dict>
 
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
