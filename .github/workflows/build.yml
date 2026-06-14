@@ -20,7 +20,6 @@ jobs:
 
     - name: Select Xcode 15
       run: |
-        # Use whatever Xcode 15.x is available on this runner
         XCODE=$(ls /Applications | grep "Xcode_15" | sort -V | tail -1)
         echo "Using: $XCODE"
         sudo xcode-select -s /Applications/$XCODE/Contents/Developer
@@ -38,7 +37,6 @@ jobs:
     - name: Install xcpretty
       run: gem install xcpretty --no-document 2>/dev/null || true
 
-    # Build unsigned .app — show full log on failure
     - name: Build unsigned .app
       run: |
         set -o pipefail
@@ -60,24 +58,33 @@ jobs:
           exit $EXIT
         fi
 
-    # Package the .app into an unsigned .ipa
     - name: Package into unsigned IPA
       run: |
         set -e
-        APP_PATH=$(find $RUNNER_TEMP/DerivedData -name "ManualCam.app" -type d | head -1)
 
+        # Find the built .app
+        APP_PATH=$(find $RUNNER_TEMP/DerivedData -name "ManualCam.app" -type d | head -1)
         if [ -z "$APP_PATH" ]; then
-          echo "❌ ERROR: ManualCam.app not found — build likely failed"
+          echo "❌ ManualCam.app not found"
           exit 1
         fi
+        echo "✅ Found: $APP_PATH"
 
-        echo "✅ Found app at: $APP_PATH"
-        mkdir -p $RUNNER_TEMP/Payload
-        cp -r "$APP_PATH" $RUNNER_TEMP/Payload/ManualCam.app
+        # Create a clean Payload directory
+        WORK_DIR=$RUNNER_TEMP/ipa_work
+        rm -rf "$WORK_DIR"
+        mkdir -p "$WORK_DIR/Payload"
+        cp -r "$APP_PATH" "$WORK_DIR/Payload/ManualCam.app"
 
-        cd $RUNNER_TEMP
-        zip -r ManualCam-unsigned.ipa Payload/
-        echo "✅ IPA created: $(du -sh ManualCam-unsigned.ipa)"
+        # IMPORTANT: cd into WORK_DIR before zipping
+        # so the zip contains Payload/ManualCam.app at its root
+        # NOT /private/var/folders/.../Payload/ManualCam.app
+        cd "$WORK_DIR"
+        zip -r "$RUNNER_TEMP/ManualCam-unsigned.ipa" Payload
+
+        echo "✅ IPA size: $(du -sh $RUNNER_TEMP/ManualCam-unsigned.ipa)"
+        echo "--- Verifying IPA structure ---"
+        unzip -l "$RUNNER_TEMP/ManualCam-unsigned.ipa" | head -15
 
     - name: Upload unsigned IPA
       uses: actions/upload-artifact@v4
