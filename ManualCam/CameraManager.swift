@@ -44,6 +44,8 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var supportsTorch: Bool = false
     @Published var isTorchOn: Bool = false
     @Published var lastPhoto: UIImage?
+    // FIX: dedicated array — updated in photo delegate, never races with fireShutter()
+    @Published var capturedPhotos: [UIImage] = []
     @Published var focusPoint: CGPoint? = nil
     @Published var permissionGranted: Bool = false
     @Published var errorMessage: String? = nil
@@ -369,6 +371,7 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         if let error { DispatchQueue.main.async { self.errorMessage = error.localizedDescription }; return }
 
+        // Save to Photos library
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else { return }
             PHPhotoLibrary.shared().performChanges {
@@ -379,8 +382,28 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
             }
         }
 
-        if let data = photo.fileDataRepresentation(), let img = UIImage(data: data) {
-            DispatchQueue.main.async { self.lastPhoto = img }
+        // FIX 2+3: Build image with correct portrait orientation
+        // photo.fileDataRepresentation() preserves EXIF orientation
+        // We explicitly fix it so UIImage displays correctly in the gallery
+        guard let data = photo.fileDataRepresentation() else { return }
+        guard let rawImage = UIImage(data: data) else { return }
+
+        // Normalise orientation to portrait up
+        let img: UIImage
+        if rawImage.imageOrientation == .up {
+            img = rawImage
+        } else {
+            // Re-draw into a context to bake the orientation in
+            UIGraphicsBeginImageContextWithOptions(rawImage.size, false, rawImage.scale)
+            rawImage.draw(in: CGRect(origin: .zero, size: rawImage.size))
+            img = UIGraphicsGetImageFromCurrentImageContext() ?? rawImage
+            UIGraphicsEndImageContext()
+        }
+
+        DispatchQueue.main.async {
+            self.lastPhoto = img
+            // Prepend to array so gallery always shows newest first
+            self.capturedPhotos.insert(img, at: 0)
         }
     }
 }

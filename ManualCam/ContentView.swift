@@ -50,7 +50,6 @@ struct ContentView: View {
     @State private var focusLocked   = false
 
     @State private var showGallery     = false
-    @State private var capturedImages: [UIImage] = []
     @State private var shutterFlash    = false
 
     var body: some View {
@@ -78,7 +77,7 @@ struct ContentView: View {
         .onChange(of: wbIdx)      { _ in applyWBIfManual() }
         .onChange(of: focusIdx)   { _ in applyFocusIfManual() }
         .onChange(of: zoomIdx)    { _ in cam.setZoom(zoomValues[zoomIdx]) }
-        .sheet(isPresented: $showGallery) { GalleryView(images: capturedImages) }
+        .sheet(isPresented: $showGallery) { GalleryView(images: cam.capturedPhotos) }
     }
 
     // MARK: - Viewfinder
@@ -343,7 +342,7 @@ struct ContentView: View {
                             .fill(Color(white: 0.15))
                             .overlay(RoundedRectangle(cornerRadius: 11)
                                 .strokeBorder(Color.white.opacity(0.18), lineWidth: 1.5))
-                        if let img = capturedImages.first {
+                        if let img = cam.capturedPhotos.first {
                             Image(uiImage: img)
                                 .resizable().scaledToFill()
                                 .clipShape(RoundedRectangle(cornerRadius: 9))
@@ -461,7 +460,8 @@ struct ContentView: View {
         }
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         cam.capturePhoto(rawEnabled: rawEnabled)
-        if let img = cam.lastPhoto { capturedImages.insert(img, at: 0) }
+        // Gallery thumbnail and capturedPhotos array are updated automatically
+        // by the photo delegate in CameraManager — no race condition
     }
 
     // MARK: - Apply controls
