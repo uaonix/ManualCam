@@ -44,11 +44,13 @@ final class CameraManager: NSObject, ObservableObject {
     @Published var supportsTorch: Bool = false
     @Published var isTorchOn: Bool = false
     @Published var lastPhoto: UIImage?
-    // FIX: dedicated array — updated in photo delegate, never races with fireShutter()
     @Published var capturedPhotos: [UIImage] = []
     @Published var focusPoint: CGPoint? = nil
     @Published var permissionGranted: Bool = false
     @Published var errorMessage: String? = nil
+
+    // Callback fires after each capture with image + PHAsset localIdentifier
+    var onPhotoCaptured: ((UIImage, String?) -> Void)? = nil
 
     // Polling timer replaces KVO (avoids all concurrency issues)
     private var pollTimer: Timer?
@@ -371,39 +373,48 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         if let error { DispatchQueue.main.async { self.errorMessage = error.localizedDescription }; return }
 
-        // Save to Photos library
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else { return }
-            PHPhotoLibrary.shared().performChanges {
-                let req = PHAssetCreationRequest.forAsset()
-                if let data = photo.fileDataRepresentation() {
-                    req.addResource(with: photo.isRawPhoto ? .alternatePhoto : .photo, data: data, options: nil)
-                }
-            }
-        }
-
-        // FIX 2+3: Build image with correct portrait orientation
-        // photo.fileDataRepresentation() preserves EXIF orientation
-        // We explicitly fix it so UIImage displays correctly in the gallery
         guard let data = photo.fileDataRepresentation() else { return }
         guard let rawImage = UIImage(data: data) else { return }
 
-        // Normalise orientation to portrait up
+        // Normalise orientation to portrait
         let img: UIImage
         if rawImage.imageOrientation == .up {
             img = rawImage
         } else {
-            // Re-draw into a context to bake the orientation in
             UIGraphicsBeginImageContextWithOptions(rawImage.size, false, rawImage.scale)
             rawImage.draw(in: CGRect(origin: .zero, size: rawImage.size))
             img = UIGraphicsGetImageFromCurrentImageContext() ?? rawImage
             UIGraphicsEndImageContext()
         }
 
-        DispatchQueue.main.async {
-            self.lastPhoto = img
-            // Prepend to array so gallery always shows newest first
-            self.capturedPhotos.insert(img, at: 0)
+        // Save to Photos library and capture the localIdentifier
+        // so PhotoStore can later check if the asset was deleted
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
+            guard status == .authorized || status == .limited else {
+                DispatchQueue.main.async {
+                    self?.lastPhoto = img
+                    self?.capturedPhotos.insert(img, at: 0)
+                    self?.onPhotoCaptured?(img, nil)
+                }
+                return
+            }
+
+            var localIdentifier: String? = nil
+            PHPhotoLibrary.shared().performChanges({
+                let req = PHAssetCreationRequest.forAsset()
+                if photo.isRawPhoto {
+                    req.addResource(with: .alternatePhoto, data: data, options: nil)
+                } else {
+                    req.addResource(with: .photo, data: data, options: nil)
+                }
+                localIdentifier = req.placeholderForCreatedAsset?.localIdentifier
+            }, completionHandler: { _, _ in
+                DispatchQueue.main.async {
+                    self?.lastPhoto = img
+                    self?.capturedPhotos.insert(img, at: 0)
+                    self?.onPhotoCaptured?(img, localIdentifier)
+                }
+            })
         }
     }
 }

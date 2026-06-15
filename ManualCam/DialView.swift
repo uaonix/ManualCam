@@ -107,25 +107,31 @@ struct DialCard: View {
     var showAuto: Bool   = false
 
     var body: some View {
-        VStack(spacing: 2) {
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 1) {
+                Text(label)
+                    .font(.system(size: 9, weight: .bold)).kerning(0.8)
+                    .foregroundColor(.gray).textCase(.uppercase)
+                Text(value)
+                    .font(.system(size: 15, weight: .heavy, design: .monospaced))
+                    .foregroundColor(isSelected ? .yellow : .white)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                Text(unit)
+                    .font(.system(size: 8)).foregroundColor(.gray)
+            }
+            .padding(.top, 0)
+            .padding(.bottom, 2)
+            .frame(maxWidth: .infinity)
+
             if showAuto {
                 Text("A")
-                    .font(.system(size: 8, weight: .black)).foregroundColor(.cyan)
-                    .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 4)
-            } else {
-                Spacer().frame(height: 10)
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundColor(.cyan)
+                    .padding(.top, 3)
+                    .padding(.trailing, 4)
             }
-            Text(label)
-                .font(.system(size: 9, weight: .bold)).kerning(0.8)
-                .foregroundColor(.gray).textCase(.uppercase)
-            Text(value)
-                .font(.system(size: 15, weight: .heavy, design: .monospaced))
-                .foregroundColor(isSelected ? .yellow : .white)
-                .lineLimit(1).minimumScaleFactor(0.6)
-            Text(unit)
-                .font(.system(size: 8)).foregroundColor(.gray)
         }
-        .frame(width: 70, height: 62)
+        .frame(width: 70, height: 46)
         .background(
             RoundedRectangle(cornerRadius: 10).fill(Color(white: 0.1))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(
