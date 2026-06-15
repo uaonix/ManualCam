@@ -7,7 +7,8 @@ struct CameraPreviewView: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
         view.previewLayer.session      = session
-        view.previewLayer.videoGravity = .resizeAspectFill
+        // view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.videoGravity = .resizeAspect
         view.forcePortrait()
         return view
     }
@@ -29,6 +30,7 @@ final class PreviewUIView: UIView {
     }
 
     func forcePortrait() {
+        return
         guard let conn = previewLayer.connection else { return }
 
         // iOS 17+ API — use rotation angle (0° = portrait)
