@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.12"
+    private let appVersion = "0.1.13"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -205,7 +205,7 @@ struct ContentView: View {
                     Spacer().frame(height: geo.safeAreaInsets.top + 100)
                     HStack {
                         Spacer()
-                        HistogramView(image: store.photos.first?.image.cgImage)
+                        HistogramView(image: store.photos.first?.thumbnail.cgImage)
                             .frame(width:90, height:52).padding(.trailing,12)
                     }
                     Spacer()
@@ -317,7 +317,7 @@ struct ContentView: View {
                             .fill(Color(white:0.15))
                             .overlay(RoundedRectangle(cornerRadius:10)
                                 .strokeBorder(Color.white.opacity(0.2), lineWidth:1.5))
-                        if let img = store.photos.first?.image {
+                        if let img = store.photos.first?.thumbnail {
                             Image(uiImage: img)
                                 .resizable().scaledToFill()
                                 .clipShape(RoundedRectangle(cornerRadius:8))
