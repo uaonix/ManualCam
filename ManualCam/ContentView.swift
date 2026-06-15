@@ -7,6 +7,8 @@ enum CamParam: String, CaseIterable {
 }
 
 struct ContentView: View {
+    // Bump this on every build so you can verify the update installed
+    private let appVersion = "0.1.10"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -198,6 +200,19 @@ struct ContentView: View {
                 Text("\(countdown)")
                     .font(.system(size:80, weight:.ultraLight, design:.rounded))
                     .foregroundColor(.white).shadow(radius:10)
+            }
+
+            // Version badge — bottom right of viewfinder
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Text(appVersion)
+                        .font(.system(size:9, weight:.medium, design:.monospaced))
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 6)
+                }
             }
         }
         .frame(width: geo.size.width, height: vfH)

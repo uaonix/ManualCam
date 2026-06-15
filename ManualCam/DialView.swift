@@ -9,22 +9,19 @@ struct DialView<T: BinaryFloatingPoint>: View {
     var isLocked: Bool = false
     var accentColor: Color = .yellow
 
-    // FIX 3: much larger divisor = slower, more precise scrolling
-    // Old value was tickSpacing (28) — now 3× slower
+    // sensitivity: pixels per tick (lower = faster, higher = slower)
+    // 1.0 = fast, 1.5 = medium, 3.0 = slow
     private let tickSpacing: CGFloat = 28
-    private let sensitivity: CGFloat = 3.0   // drag pixels per tick step
+    private let sensitivity: CGFloat = 1.5
 
-    @State private var dragAccum: CGFloat = 0  // accumulated drag
-    @State private var lastIndex: Int = 0      // index at drag start
+    @State private var startIndex: Int = 0
 
     var body: some View {
         ZStack {
-            // Center indicator line (drawn on top)
             Rectangle()
                 .fill(isLocked ? Color.gray : accentColor)
                 .frame(width: 2)
                 .allowsHitTesting(false)
-
             tickStrip
         }
         .frame(height: 52)
@@ -33,31 +30,24 @@ struct DialView<T: BinaryFloatingPoint>: View {
             DragGesture(minimumDistance: 1)
                 .onChanged { value in
                     guard !isLocked else { return }
-                    // FIX 3: accumulate drag and only step when threshold crossed
-                    let delta = -value.translation.width
-                    let steps = Int((dragAccum + delta) / (tickSpacing * sensitivity))
-                    if steps != 0 {
-                        dragAccum += delta - CGFloat(steps) * tickSpacing * sensitivity
-                        let newIdx = clamp(lastIndex + steps)
-                        if newIdx != selectedIndex {
-                            selectedIndex = newIdx
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        }
-                    } else {
-                        dragAccum += delta
+                    // Use total translation from gesture start (not delta)
+                    // so there's no accumulation bug
+                    let totalDrag = -value.translation.width
+                    let steps     = Int(totalDrag / (tickSpacing * sensitivity))
+                    let newIdx    = clamp(startIndex + steps)
+                    if newIdx != selectedIndex {
+                        selectedIndex = newIdx
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
-                    lastIndex = selectedIndex
-                    dragAccum = 0
                 }
                 .onEnded { _ in
-                    dragAccum = 0
-                    lastIndex = selectedIndex
+                    startIndex = selectedIndex
                 }
         )
         .opacity(isLocked ? 0.4 : 1.0)
         .allowsHitTesting(!isLocked)
-        .onAppear { lastIndex = selectedIndex }
-        .onChange(of: selectedIndex) { _ in lastIndex = selectedIndex }
+        .onAppear { startIndex = selectedIndex }
+        .onChange(of: selectedIndex) { _ in startIndex = selectedIndex }
     }
 
     private func clamp(_ idx: Int) -> Int {
