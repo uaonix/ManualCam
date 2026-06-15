@@ -18,8 +18,13 @@ struct ContentView: View {
     let evValues:       [Float]   = [-3,-2.7,-2.3,-2,-1.7,-1.3,-1,-0.7,-0.3,0,0.3,0.7,1,1.3,1.7,2,2.3,2.7,3]
     let zoomValues:     [CGFloat] = [1,1.2,1.5,2,2.5,3,4,5,6,8,10]
 
-    @State private var isoIdx = 9, shutterIdx = 12, apIdx = 6
-    @State private var wbIdx  = 7, focusIdx   = 12, evIdx = 9, zoomIdx = 0
+    @State private var isoIdx     = 9
+    @State private var shutterIdx = 12
+    @State private var apIdx      = 6
+    @State private var wbIdx      = 7
+    @State private var focusIdx   = 12
+    @State private var evIdx      = 9
+    @State private var zoomIdx    = 0
     @State private var selectedParam  = CamParam.iso
     @State private var exposureMode   = ExposureMode.manual
     @State private var showGrid       = false
@@ -81,7 +86,6 @@ struct ContentView: View {
     }
 
     // MARK: - Viewfinder
-    @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
         let vfH = geo.size.height - panelHeight(geo: geo)
         ZStack {
@@ -89,9 +93,12 @@ struct ContentView: View {
                 .gesture(MagnificationGesture()
                     .updating($pinchScale) { v,s,_ in s=v }
                     .onChanged { v in cam.setZoom((baseZoom*v).clamped(to: cam.zoomRange)) }
-                    .onEnded   { v in
-                        baseZoom = (baseZoom*v).clamped(to: cam.zoomRange)
-                        zoomIdx  = nearest(zoomValues, baseZoom)
+                    .onEnded   { [self] v in
+                        let newZoom = (baseZoom*v).clamped(to: cam.zoomRange)
+                        DispatchQueue.main.async {
+                            baseZoom = newZoom
+                            zoomIdx  = nearest(zoomValues, newZoom)
+                        }
                     }
                 )
                 .onTapGesture { loc in
@@ -153,7 +160,9 @@ struct ContentView: View {
                     ForEach([1.0,2.0,3.0,5.0], id:\.self) { z in
                         if z <= cam.zoomRange.upperBound + 0.5 {
                             Button {
-                                cam.setZoom(z); baseZoom = z; zoomIdx = nearest(zoomValues, z)
+                                cam.setZoom(z)
+                                            let zi = nearest(zoomValues, z)
+                                            DispatchQueue.main.async { baseZoom = z; zoomIdx = zi }
                             } label: {
                                 let active = abs(cam.currentZoom - z) < 0.3
                                 Text("\(Int(z))×")
@@ -195,7 +204,6 @@ struct ContentView: View {
     }
 
     // MARK: - Control Panel
-    @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 0) {
 
@@ -336,24 +344,31 @@ struct ContentView: View {
     }
 
     // MARK: - Active Dial
+    @ViewBuilder
     var activeDial: some View {
-        Group {
-            switch selectedParam {
-            case .iso:
-                DialView(label:"ISO",     values:isoValues,      format:{ String(Int($0)) },                  selectedIndex:$isoIdx,     isLocked:isLocked(.iso))
-            case .shutter:
-                DialView(label:"Shutter", values:shutterValues,  format:{ fmtSSDouble($0) },                  selectedIndex:$shutterIdx,  isLocked:isLocked(.shutter))
-            case .aperture:
-                DialView(label:"ƒ-stop",  values:apertureValues, format:{ String(format:"ƒ%.1f",$0) },        selectedIndex:$apIdx,       isLocked:isLocked(.aperture))
-            case .wb:
-                DialView(label:"K",       values:wbValues,       format:{ String(Int($0))+"K" },              selectedIndex:$wbIdx,       isLocked:isLocked(.wb))
-            case .focus:
-                DialView(label:"Focus",   values:focusValues,    format:{ $0>=0.99 ? "∞" : String(format:"%.2f",$0) }, selectedIndex:$focusIdx, isLocked:isLocked(.focus))
-            case .ev:
-                DialView(label:"EV",      values:evValues,       format:{ $0==0 ? "0" : String(format:"%+.1f",$0) },   selectedIndex:$evIdx,   isLocked:isLocked(.ev))
-            case .zoom:
-                DialView(label:"Zoom",    values:zoomValues,     format:{ String(format:"%.1f×",$0) },        selectedIndex:$zoomIdx,    isLocked:false)
-            }
+        if selectedParam == .iso {
+            DialView(label:"ISO",     values:isoValues,      format:{ String(Int($0)) },
+                     selectedIndex:$isoIdx,     isLocked:isLocked(.iso))
+        } else if selectedParam == .shutter {
+            DialView(label:"Shutter", values:shutterValues,  format:{ fmtSSDouble($0) },
+                     selectedIndex:$shutterIdx, isLocked:isLocked(.shutter))
+        } else if selectedParam == .aperture {
+            DialView(label:"f-stop",  values:apertureValues, format:{ String(format:"f%.1f",$0) },
+                     selectedIndex:$apIdx,      isLocked:isLocked(.aperture))
+        } else if selectedParam == .wb {
+            DialView(label:"K",       values:wbValues,       format:{ String(Int($0))+"K" },
+                     selectedIndex:$wbIdx,      isLocked:isLocked(.wb))
+        } else if selectedParam == .focus {
+            DialView(label:"Focus",   values:focusValues,    format:{ $0>=0.99 ? "inf" : String(format:"%.2f",$0) },
+                     selectedIndex:$focusIdx,   isLocked:isLocked(.focus))
+        } else if selectedParam == .ev {
+            DialView(label:"EV",      values:evValues,       format:{ $0==0 ? "0" : String(format:"%+.1f",$0) },
+                     selectedIndex:$evIdx,      isLocked:isLocked(.ev))
+        } else {
+            DialView(label:"Zoom",    values:zoomValues,     format:{ String(format:"%.1fx",$0) },
+                     selectedIndex:$zoomIdx,    isLocked:false)
+        }
+    }
         }
     }
 
