@@ -86,6 +86,7 @@ struct ContentView: View {
     }
 
     // MARK: - Viewfinder
+    @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
         let vfH = geo.size.height - panelHeight(geo: geo)
         ZStack {
@@ -204,6 +205,7 @@ struct ContentView: View {
     }
 
     // MARK: - Control Panel
+    @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 0) {
 
@@ -367,8 +369,6 @@ struct ContentView: View {
         } else {
             DialView(label:"Zoom",    values:zoomValues,     format:{ String(format:"%.1fx",$0) },
                      selectedIndex:$zoomIdx,    isLocked:false)
-        }
-    }
         }
     }
 
