@@ -7,6 +7,8 @@ enum CamParam: String, CaseIterable {
 }
 
 struct ContentView: View {
+    // Bump this on every build so you can verify the update installed
+    private let appVersion = "0.1.14"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -60,7 +62,17 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
-        .onAppear { cam.setup() }
+        .onAppear {
+            cam.setup()
+            // Wire photo callback → PhotoStore (captures localIdentifier for deletion sync)
+            cam.onPhotoCaptured = { [weak store] img, localId in
+                store?.add(img, localIdentifier: localId)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            // Refresh gallery when returning to app (in case user deleted from Photos)
+            store.refresh()
+        }
         .onChange(of: isoIdx)     { _ in applyIfManual() }
         .onChange(of: shutterIdx) { _ in applyIfManual() }
         .onChange(of: evIdx)      { _ in cam.setEV(evValues[evIdx]) }
@@ -69,8 +81,7 @@ struct ContentView: View {
         .onChange(of: zoomIdx)    { _ in cam.setZoom(zoomValues[zoomIdx]) }
         // Hook into CameraManager capturedPhotos to persist each new photo
         .onChange(of: cam.capturedPhotos.count) { _ in
-            if let newest = cam.capturedPhotos.first,
-               store.photos.first !== newest {
+            if let newest = cam.capturedPhotos.first {
                 store.add(newest)
             }
         }
@@ -78,17 +89,25 @@ struct ContentView: View {
     }
 
     // MARK: - Heights
-    // Fixed row heights so everything fits without overflow
+    // Viewfinder uses 3:4 ratio (portrait camera native aspect)
+    // Control panel fills the rest of the screen including safe area bottom
+    func viewfinderHeight(geo: GeometryProxy) -> CGFloat {
+        // 3:4 = width * 4/3, but cap at 62% of screen height max
+        let natural = geo.size.width * 4.0 / 3.0
+        return natural;
+        let maxH    = geo.size.height * 0.62
+        return min(natural, maxH)
+    }
+
     func panelHeight(geo: GeometryProxy) -> CGFloat {
-        // cameras:62 + divider:1 + modes:40 + divider:1 + cards:76
-        // + divider:1 + dial:52 + divider:1 + shutter:88 + safeBottom
-        return 62 + 1 + 40 + 1 + 76 + 1 + 52 + 1 + 88 + geo.safeAreaInsets.bottom
+        // cameras:62 + modes:36 + cards:70 + dial:52 + shutter+safe
+        return geo.size.height - viewfinderHeight(geo: geo)
     }
 
     // MARK: - Viewfinder
+    @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
-        // let vfH = geo.size.height - panelHeight(geo: geo)
-        let vfH = geo.size.height
+        let vfH = viewfinderHeight(geo: geo)
         ZStack {
             CameraPreviewView(session: cam.session)
                 .gesture(MagnificationGesture()
@@ -187,7 +206,7 @@ struct ContentView: View {
                     Spacer().frame(height: geo.safeAreaInsets.top + 100)
                     HStack {
                         Spacer()
-                        HistogramView(image: store.photos.first?.cgImage)
+                        HistogramView(image: store.photos.first?.thumbnail.cgImage)
                             .frame(width:90, height:52).padding(.trailing,12)
                     }
                     Spacer()
@@ -199,12 +218,26 @@ struct ContentView: View {
                     .font(.system(size:80, weight:.ultraLight, design:.rounded))
                     .foregroundColor(.white).shadow(radius:10)
             }
+
+            // Version badge — bottom right of viewfinder
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Text(appVersion)
+                        .font(.system(size:9, weight:.medium, design:.monospaced))
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 6)
+                }
+            }
         }
         .frame(width: geo.size.width, height: vfH)
         .clipped()
     }
 
     // MARK: - Control Panel
+    @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 0) {
 
@@ -250,8 +283,8 @@ struct ContentView: View {
                     }
                 }
             }
-            .padding(.horizontal,8).padding(.vertical,4)
-            .frame(height:40)
+            .padding(.horizontal,8).padding(.top,2).padding(.bottom,4)
+            .frame(height:36)
 
             Divider().background(Color.white.opacity(0.08))
 
@@ -265,9 +298,9 @@ struct ContentView: View {
                         }.buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal,12).padding(.vertical,7)
+                .padding(.horizontal,12).padding(.top,4).padding(.bottom,5)
             }
-            .frame(height:76)
+            .frame(height:66)
 
             Divider().background(Color.white.opacity(0.08))
 
@@ -285,7 +318,7 @@ struct ContentView: View {
                             .fill(Color(white:0.15))
                             .overlay(RoundedRectangle(cornerRadius:10)
                                 .strokeBorder(Color.white.opacity(0.2), lineWidth:1.5))
-                        if let img = store.photos.first {
+                        if let img = store.photos.first?.thumbnail {
                             Image(uiImage: img)
                                 .resizable().scaledToFill()
                                 .clipShape(RoundedRectangle(cornerRadius:8))
@@ -337,10 +370,10 @@ struct ContentView: View {
             }
             .padding(.horizontal,24)
             .padding(.top,8)
-            // FIX 4: bottom padding eats the safe area zone — no wasted black space
-            .padding(.bottom, geo.safeAreaInsets.bottom + 4)
-            .frame(height: 88 + geo.safeAreaInsets.bottom)
+            .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : 16)
+            .frame(maxWidth: .infinity)
         }
+        .frame(height: panelHeight(geo: geo))
         .background(Color(white:0.07))
     }
 
@@ -574,40 +607,100 @@ struct CornerBracket: Shape {
     }
 }
 
-// MARK: - Gallery View (uses PhotoStore)
+// MARK: - Gallery View (uses PhotoStore, supports swipe-to-delete)
 struct GalleryView: View {
     @ObservedObject var store: PhotoStore
     @Environment(\.dismiss) var dismiss
+    @State private var selectedPhoto: PhotoStore.StoredPhoto? = nil
     let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
         NavigationView {
-            ScrollView {
+            Group {
                 if store.photos.isEmpty {
                     VStack(spacing:16) {
                         Image(systemName:"photo.on.rectangle.angled")
                             .font(.system(size:60)).foregroundColor(.gray)
                         Text("No photos yet").foregroundColor(.gray)
+                        Text("Tap the shutter to start shooting")
+                            .font(.system(size:13)).foregroundColor(.gray.opacity(0.6))
                     }
-                    .frame(maxWidth:.infinity).padding(.top,80)
+                    .frame(maxWidth:.infinity, maxHeight:.infinity)
                 } else {
-                    LazyVGrid(columns:cols, spacing:2) {
-                        ForEach(store.photos.indices, id:\.self) { i in
-                            Image(uiImage:store.photos[i])
-                                .resizable().scaledToFill()
-                                .frame(minWidth:0, maxWidth:.infinity)
-                                .aspectRatio(1, contentMode:.fill).clipped()
+                    ScrollView {
+                        LazyVGrid(columns:cols, spacing:2) {
+                            ForEach(store.photos) { photo in
+                                Image(uiImage: photo.thumbnail)
+                                    .resizable().scaledToFill()
+                                    .frame(minWidth:0, maxWidth:.infinity)
+                                    .aspectRatio(1, contentMode:.fill)
+                                    .clipped()
+                                    .onTapGesture { selectedPhoto = photo }
+                            }
                         }
+                        .padding(.bottom, 20)
                     }
                 }
             }
             .navigationTitle("Photos (\(store.photos.count))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement:.navigationBarLeading) {
+                    Button("Refresh") { store.refresh() }.font(.system(size:13))
+                }
                 ToolbarItem(placement:.navigationBarTrailing) { Button("Done") { dismiss() } }
             }
             .background(Color.black)
         }
         .preferredColorScheme(.dark)
+        // Full-screen photo viewer with delete
+        .sheet(item: $selectedPhoto) { photo in
+            PhotoDetailView(photo: photo, store: store, onClose: { selectedPhoto = nil })
+        }
+    }
+}
+
+// MARK: - Photo Detail View
+struct PhotoDetailView: View {
+    let photo: PhotoStore.StoredPhoto
+    @ObservedObject var store: PhotoStore
+    let onClose: () -> Void
+    @State private var showDeleteConfirm = false
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                Image(uiImage: photo.thumbnail)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement:.navigationBarLeading) {
+                    Button("Close") { onClose() }
+                        .foregroundColor(.white)
+                }
+                ToolbarItem(placement:.navigationBarTrailing) {
+                    Button(role:.destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName:"trash")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete from App", role:.destructive) {
+                store.delete(photo: photo)
+                onClose()
+            }
+            Button("Cancel", role:.cancel) {}
+        } message: {
+            Text("This removes the photo from ManualCam only. It stays in your Photos library.")
+        }
     }
 }
