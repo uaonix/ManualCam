@@ -224,7 +224,7 @@ struct ContentView: View {
     @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 6) {
-
+            Spacer()
             // Camera selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -356,7 +356,6 @@ struct ContentView: View {
             .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : 16)
             .frame(maxWidth: .infinity)
         }
-        .padding(top,300)
         .background(Color.white.opacity(0))
     }
 
