@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.18"
+    private let appVersion = "0.1.19"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -112,7 +112,7 @@ struct ContentView: View {
     // MARK: - Viewfinder
     @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
-        let vfH = viewfinderHeight(geo: geo)
+        // let vfH = viewfinderHeight(geo: geo)
         ZStack {
             CameraPreviewView(session: cam.session)
                 .gesture(MagnificationGesture()
@@ -127,7 +127,8 @@ struct ContentView: View {
                     }
                 )
                 .onTapGesture { loc in
-                    cam.tapToFocus(at: loc, in: CGSize(width: geo.size.width, height: vfH))
+                    cam.tapToFocus(at: loc, in: CGSize(width: geo.size.width, height:  geo.size.width))
+                    // cam.tapToFocus(at: loc, in: CGSize(width: geo.size.width, height: vfH))
                     focusTapPoint = loc; focusLocked = false
                     DispatchQueue.main.asyncAfter(deadline: .now()+0.5)  { focusLocked = true }
                     DispatchQueue.main.asyncAfter(deadline: .now()+2.5)  { focusTapPoint = nil; focusLocked = false }
@@ -237,7 +238,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(width: geo.size.width, height: vfH)
+        .frame(width: geo.size.width, height: geo.size.width)
         // .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
