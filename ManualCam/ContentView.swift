@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.22"
+    private let appVersion = "0.1.23"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -352,11 +352,11 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal,24)
-            .padding(.top,300)
+            .padding(.top,20)
             .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : 16)
             .frame(maxWidth: .infinity)
         }
-
+        .padding(top:300)
         .background(Color.white.opacity(0))
     }
 
