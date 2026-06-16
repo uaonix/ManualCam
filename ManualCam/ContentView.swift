@@ -89,8 +89,6 @@ struct ContentView: View {
     // MARK: - Viewfinder
     @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
-        VStack {
-
         ZStack {
             CameraPreviewView(session: cam.session)
                 .gesture(MagnificationGesture()
@@ -216,8 +214,7 @@ struct ContentView: View {
                 }
             }
         }
-        Spacer()
-        }
+       
         // .frame(width: geo.size.width, maxHeight: .infinity)
         // .frame(maxWidth: .infinity, maxHeight: .infinity)
         // .clipped()
@@ -227,7 +224,6 @@ struct ContentView: View {
     @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 6) {
-            Spacer.frame(height:200)
             // Camera selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -251,6 +247,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal,8).padding(.vertical,8)
             }
+            .padding(.top,200)
             .frame(height:62)
 
             Divider().background(Color.white.opacity(0.08)).frame(height:6)
