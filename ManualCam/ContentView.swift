@@ -48,7 +48,7 @@ struct ContentView: View {
             ZStack(alignment: .top) {
                 // Color.black.ignoresSafeArea()
                 if cam.permissionGranted {
-                    ZStack(spacing: 0) {
+                    ZStack() {
                         viewfinder(geo: geo)
                         controlPanel(geo: geo)
                     }
