@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.21"
+    private let appVersion = "0.1.22"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -352,12 +352,12 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal,24)
-            .padding(.top,8)
+            .padding(.top,300)
             .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : 16)
             .frame(maxWidth: .infinity)
         }
 
-        .background(Color(white:0.07))
+        .background(Color.white.opacity(0))
     }
 
     // MARK: - Active Dial
