@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.19"
+    private let appVersion = "0.1.20"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -97,7 +97,7 @@ struct ContentView: View {
         // let natural = geo.size.width * 4.0 / 3.0
         // return natural
 
-        return .containerRelativeFrame(.vertical) - panelHeight(geo: geo)
+        return geo.size.height - panelHeight(geo: geo)
         // let maxH    = geo.size.height * 0.62
         // return min(natural, maxH)
     }
@@ -105,8 +105,7 @@ struct ContentView: View {
     func panelHeight(geo: GeometryProxy) -> CGFloat {
         // cameras:62 + modes:36 + cards:70 + dial:52 + shutter+safe
 
-        // return 300
-        return geo.size.height - viewfinderHeight(geo: geo)
+        return 340
     }
 
     // MARK: - Viewfinder
