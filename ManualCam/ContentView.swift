@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.15"
+    private let appVersion = "0.1.16"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -60,7 +60,8 @@ struct ContentView: View {
                 }
             }
         }
-        .ignoresSafeArea()
+        // .ignoresSafeArea()
+        .ignoresSafeArea(.all)
         .preferredColorScheme(.dark)
         .onAppear {
             cam.setup()
@@ -102,7 +103,7 @@ struct ContentView: View {
     func panelHeight(geo: GeometryProxy) -> CGFloat {
         // cameras:62 + modes:36 + cards:70 + dial:52 + shutter+safe
 
-        return 400
+        return 300
         return geo.size.height - viewfinderHeight(geo: geo)
     }
 
