@@ -227,7 +227,7 @@ struct ContentView: View {
     @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 6) {
-            Spacer.frame(height200)
+            Spacer.frame(height:200)
             // Camera selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
