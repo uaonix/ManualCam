@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.20"
+    private let appVersion = "0.1.21"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -46,12 +46,9 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
-                Color.black.ignoresSafeArea()
+                // Color.black.ignoresSafeArea()
                 if cam.permissionGranted {
-                    // FIX 4: layout fills full screen
-                    // viewfinder gets everything above the control panel
-                    // control panel sits at bottom INCLUDING the safe area zone
-                    VStack(spacing: 0) {
+                    ZStack(spacing: 0) {
                         viewfinder(geo: geo)
                         controlPanel(geo: geo)
                     }
@@ -61,7 +58,7 @@ struct ContentView: View {
             }
         }
         // .ignoresSafeArea()
-        .ignoresSafeArea(.all)
+        // .ignoresSafeArea(.all)
         .preferredColorScheme(.dark)
         .onAppear {
             cam.setup()
@@ -89,29 +86,10 @@ struct ContentView: View {
         .sheet(isPresented: $showGallery) { GalleryView(store: store) }
     }
 
-    // MARK: - Heights
-    // Viewfinder uses 3:4 ratio (portrait camera native aspect)
-    // Control panel fills the rest of the screen including safe area bottom
-    func viewfinderHeight(geo: GeometryProxy) -> CGFloat {
-        // 3:4 = width * 4/3, but cap at 62% of screen height max
-        // let natural = geo.size.width * 4.0 / 3.0
-        // return natural
-
-        return geo.size.height - panelHeight(geo: geo)
-        // let maxH    = geo.size.height * 0.62
-        // return min(natural, maxH)
-    }
-
-    func panelHeight(geo: GeometryProxy) -> CGFloat {
-        // cameras:62 + modes:36 + cards:70 + dial:52 + shutter+safe
-
-        return 340
-    }
-
     // MARK: - Viewfinder
     @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
-        // let vfH = viewfinderHeight(geo: geo)
+
         ZStack {
             CameraPreviewView(session: cam.session)
                 .gesture(MagnificationGesture()
@@ -161,7 +139,7 @@ struct ContentView: View {
 
             // INFO PILLS
             VStack {
-                Spacer().frame(height: geo.safeAreaInsets.top + 54)
+                Spacer().frame(height: geo.safeAreaInsets.top + 60)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 5) {
                         InfoPill(label:"ISO",  value:"\(Int(cam.currentISO))",            warn: cam.currentISO >= 3200)
@@ -193,7 +171,7 @@ struct ContentView: View {
                                 Text("\(Int(z))×")
                                     .font(.system(size:13, weight:.bold))
                                     .foregroundColor(active ? .yellow : .white)
-                                    .padding(.horizontal,12).padding(.vertical,5)
+                                    .padding(.horizontal,6).padding(.vertical,4)
                                     .background(Capsule()
                                         .fill(active ? Color.yellow.opacity(0.2) : Color.black.opacity(0.55))
                                         .overlay(Capsule().strokeBorder(
@@ -245,7 +223,7 @@ struct ContentView: View {
     // MARK: - Control Panel
     @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 6) {
 
             // Camera selector
             ScrollView(.horizontal, showsIndicators: false) {
@@ -268,14 +246,14 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal,12).padding(.vertical,8)
+                .padding(.horizontal,8).padding(.vertical,8)
             }
             .frame(height:62)
 
-            Divider().background(Color.white.opacity(0.08))
+            Divider().background(Color.white.opacity(0.08)).frame(height:6)
 
             // Mode bar
-            HStack(spacing:4) {
+            HStack(spacing:6) {
                 ForEach(ExposureMode.allCases, id:\.self) { mode in
                     Button { exposureMode = mode; applyExposureMode(mode) } label: {
                         Text(mode.rawValue)
@@ -315,7 +293,6 @@ struct ContentView: View {
 
             Divider().background(Color.white.opacity(0.08))
 
-            // FIX 4: Shutter row uses the bottom safe area zone
             HStack(alignment:.center) {
                 // Gallery thumbnail
                 Button { showGallery = true } label: {
@@ -379,7 +356,7 @@ struct ContentView: View {
             .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : 16)
             .frame(maxWidth: .infinity)
         }
-        // .frame(height: panelHeight(geo: geo))
+
         .background(Color(white:0.07))
     }
 
