@@ -218,9 +218,9 @@ struct ContentView: View {
         }
         Spacer()
         }
-        .frame(width: geo.size.width, maxHeight: .infinity)
+        // .frame(width: geo.size.width, maxHeight: .infinity)
         // .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+        // .clipped()
     }
 
     // MARK: - Control Panel
