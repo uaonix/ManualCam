@@ -8,7 +8,7 @@ enum CamParam: String, CaseIterable {
 
 struct ContentView: View {
     // Bump this on every build so you can verify the update installed
-    private let appVersion = "0.1.23"
+    private let appVersion = "0.1.24"
     @StateObject private var cam   = CameraManager()
     @StateObject private var store = PhotoStore()
 
@@ -89,6 +89,7 @@ struct ContentView: View {
     // MARK: - Viewfinder
     @ViewBuilder
     func viewfinder(geo: GeometryProxy) -> some View {
+        VStack {
 
         ZStack {
             CameraPreviewView(session: cam.session)
@@ -215,7 +216,9 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(width: geo.size.width, height: geo.size.width)
+        Spacer()
+        }
+        .frame(width: geo.size.width, maxHeight: .infinity)
         // .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
