@@ -58,7 +58,7 @@ struct ContentView: View {
             }
         }
         // .ignoresSafeArea()
-        // .ignoresSafeArea(.all)
+        .ignoresSafeArea(.all)
         .preferredColorScheme(.dark)
         .onAppear {
             cam.setup()
@@ -227,7 +227,7 @@ struct ContentView: View {
     @ViewBuilder
     func controlPanel(geo: GeometryProxy) -> some View {
         VStack(spacing: 6) {
-            Spacer()
+            Spacer.frame(height200)
             // Camera selector
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
