@@ -356,7 +356,7 @@ struct ContentView: View {
             .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : 16)
             .frame(maxWidth: .infinity)
         }
-        .padding(top:300)
+        .padding(top,300)
         .background(Color.white.opacity(0))
     }
 
